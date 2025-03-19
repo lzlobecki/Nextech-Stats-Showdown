@@ -1,60 +1,41 @@
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
 
-SheetNames = [
-    "2013-14","2014-15","2015-16","2016-17","2017-18","2018-19","2020-21","2021-22","2022-23","2023-24"
-]
-
-ExcelFile = "(MBB) Nextech Stats Showdown - NCAA MENS BB Stats 2013-2024.xlsx"
-AllData = []
-for Sheet in SheetNames:
-    DfYear = pd.read_excel(ExcelFile, sheet_name=Sheet)
-    EndYearNum = int(Sheet[-2:]) + 2000
-    DfYear["Year"] = EndYearNum
-    TournWinsCol = f"{EndYearNum} NCAA Tournament Wins"
-    DfYear.rename(
-        columns={TournWinsCol: "TournWins", "Cinderella?": "Cinderella"},
-        inplace=True,
-        errors="ignore"
-    )
-    AllData.append(DfYear)
-
-DfAll = pd.concat(AllData, ignore_index=True)
-
-AllColumns = [
-    "Team","Conference","Region","Cinderella","TournWins","Made Tournament Previous Year","Game Count","Wins","Losses","Total Points","PPG","Total Opp Points","Opp PPG","Scoring Margin","NET","NET SOS","Q1 Wins","Q1 Losses","3 Pointers Made","3 Pointers Attempted","3 Point Percentage","Free Throws Made","Free Throws Attempted","Free Throw Percentage","Rebounds","RPG","Opp Rebounds","Opp RPG","Rebound Margin","Assists","Turnovers","Assist to Turnover Ratio","TOPG","Steals","Steals per Game","Blocks","Blocks per Game","Personal Fouls","PFPG","DQs"
-]
-
-NumericCols = [
-    "Made Tournament Previous Year","Cinderella","Game Count","Wins","Losses","Total Points","PPG","Total Opp Points","Opp PPG","Scoring Margin","3 Pointers Made","3 Pointers Attempted","3 Point Percentage","Free Throws Made","Free Throws Attempted","Free Throw Percentage","Rebounds","RPG","Opp Rebounds","Opp RPG","Rebound Margin","Assists","Turnovers","Assist to Turnover Ratio","TOPG","Steals","Steals per Game","Blocks","Blocks per Game","Personal Fouls","PFPG","DQs"
-]
-
-for Col in NumericCols:
-    if Col in DfAll.columns:
-        DfAll[Col] = pd.to_numeric(DfAll[Col], errors="coerce")
-    else:
-        DfAll[Col] = 0
-
-DfAll["TournWins"] = pd.to_numeric(DfAll["TournWins"], errors="coerce")
-DfAll.dropna(subset=["TournWins"], inplace=True)
-DfAll.fillna(0, inplace=True)
-
-TestYear = 2025
-DfTrain = DfAll[DfAll["Year"] != TestYear]
-DfTest = DfAll[DfAll["Year"] == TestYear]
-
-XTrain = DfTrain[NumericCols]
-YTrain = DfTrain["TournWins"]
-
-Model = RandomForestRegressor(n_estimators=100, random_state=42)
-Model.fit(XTrain, YTrain)
-
-XTest = DfTest[NumericCols]
-DfTest["PredictedWins"] = Model.predict(XTest)
-
-DfTestSorted = DfTest.sort_values("PredictedWins", ascending=False)
-Top10 = DfTestSorted.head(10).copy()
-Top10["Rating"] = range(10, 0, -1)
-
-print(Top10[["Team", "PredictedWins", "Cinderella", "Rating"]])
+DataFrame = pd.read_excel("(MBB) Nextech Stats Showdown - NCAA MENS BB Stats 2013-2025.xlsx", sheet_name="2024-25")
+DataFrame.rename(columns={
+    "3 Point Percentage": "3PT%",
+    "Free Throw Percentage": "FT%",
+    "Assist to Turnover Ratio": "AST/TO"
+}, inplace=True)
+DataFrame["Rating"] = (
+    1.2 * DataFrame["3PT%"]
+    + 1.1 * DataFrame["FT%"]
+    + 0.25 * DataFrame["AST/TO"]
+)
+DataFrame.sort_values(by="Rating", ascending=False, inplace=True)
+DataFrame.reset_index(drop=True, inplace=True)
+RegionGroup = DataFrame.groupby("Region", group_keys=False)
+TopTeams = RegionGroup.head(1).copy()
+SecondTeams = RegionGroup.nth(1).copy()
+TopTeams.sort_values(by="Rating", ascending=False, inplace=True)
+SecondTeams.sort_values(by="Rating", ascending=False, inplace=True)
+TopRankValues = [10, 9, 8, 7]
+TopTeams["Rank"] = TopRankValues[:len(TopTeams)]
+SecondRankValues = [6, 5, 4, 3]
+SecondTeams["Rank"] = SecondRankValues[:len(SecondTeams)]
+UsedTeams = pd.concat([TopTeams, SecondTeams], ignore_index=True)
+RemainingDf = DataFrame[~DataFrame["Team"].isin(UsedTeams["Team"])].copy()
+CinderellaCandidates = RemainingDf[RemainingDf["Cinderella?"] == 1.0].copy()
+CinderellaCandidates.sort_values(by="Rating", ascending=False, inplace=True)
+CinderellaTeams = pd.DataFrame()
+if len(CinderellaCandidates) >= 2:
+    CinderellaTeams = CinderellaCandidates.head(2).copy()
+    CinderellaTeams["Rank"] = [2, 1]
+elif len(CinderellaCandidates) == 1:
+    CinderellaTeams = CinderellaCandidates.head(1).copy()
+    CinderellaTeams["Rank"] = [2]
+else:
+    pass
+FinalDf = pd.concat([TopTeams, SecondTeams, CinderellaTeams], ignore_index=True)
+FinalDf.sort_values(by="Rank", ascending=False, inplace=True)
+print("Final Assigned Ranks:\n")
+print(FinalDf[["Team", "Conference", "Region", "Cinderella?", "Rating", "Rank"]])
